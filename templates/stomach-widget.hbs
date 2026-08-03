@@ -1,0 +1,18 @@
+<svg class="food-stomach-svg state-{{state}}" viewBox="0 0 170 180" role="img" aria-label="{{ariaLabel}}">
+  <defs>
+    <clipPath id="food-stomach-clip-{{id}}">
+      <path d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+    </clipPath>
+    <linearGradient id="food-fill-{{id}}" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="currentColor"/>
+      <stop offset="1" stop-color="color-mix(in srgb, currentColor 65%, white)"/>
+    </linearGradient>
+  </defs>
+  <path class="food-stomach-shadow" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+  <g clip-path="url(#food-stomach-clip-{{id}})">
+    <rect class="food-stomach-liquid" x="20" y="{{fillY}}" width="130" height="150" fill="url(#food-fill-{{id}})"/>
+    <path class="food-stomach-wave" d="M20 {{fillY}} Q42 {{waveY}} 64 {{fillY}} T108 {{fillY}} T152 {{fillY}}"/>
+  </g>
+  <path class="food-stomach-outline" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+  <path class="food-esophagus" d="M85 6c0 9 0 17-1 25M96 7c-1 10-2 18-5 27"/>
+</svg>
