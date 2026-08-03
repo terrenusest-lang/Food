@@ -1,0 +1,10 @@
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const manifest=JSON.parse(fs.readFileSync(new URL("../module.json",import.meta.url)));
+assert.equal(manifest.id,"food");
+assert.equal(manifest.compatibility.minimum,"14");
+for(const locale of ["en","ru"]) JSON.parse(fs.readFileSync(new URL(`../lang/${locale}.json`,import.meta.url)));
+const source=fs.readFileSync(new URL("../scripts/food.js",import.meta.url),"utf8");
+assert.match(source,/updateWorldTime/);
+assert.match(source,/food-stomach-clip/);
+console.log("Validation passed");
