@@ -25,7 +25,10 @@ async function renderStomach(actor, host) {
   if (!host) return;
   const value = clamp(actor.getFlag(MODULE_ID, "satiety") ?? 100);
   const id = `${actor.id}-${host.closest(".app")?.id ?? crypto.randomUUID()}`.replace(/[^a-zA-Z0-9-]/g, "");
-  const fillY = 155 - value * 1.15;
+
+  // The anatomical cavity spans approximately y=39..205. At 0%, the fill
+  // begins below the cavity; at 100%, it rises to just below the cardia.
+  const fillY = 205 - value * 1.55;
   const data = {
     id,
     state: stateFor(value),
