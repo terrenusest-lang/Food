@@ -1,20 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 180" role="img" aria-labelledby="title desc">
-  <title id="title">Food satiety stomach widget</title>
-  <desc id="desc">Editable source artwork for the animated stomach cross-section used by the Food module.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title desc">
+  <title id="title">Empty anatomical stomach widget</title>
+  <desc id="desc">Editable, unfilled side-view stomach artwork showing the esophagus, fundus, body, antrum, pylorus, and duodenal outlet.</desc>
   <defs>
     <clipPath id="stomach-cavity">
-      <path d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+      <path d="M113 39C103 30 88 30 76 39C57 53 45 76 40 101C34 132 43 160 64 181C85 202 118 209 147 197C169 188 182 171 186 151C188 140 193 134 204 132C194 126 183 123 174 119C164 115 158 107 156 97C152 78 143 63 130 53C121 46 117 42 113 39Z"/>
     </clipPath>
-    <linearGradient id="sample-fill" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#d48924"/>
-      <stop offset="1" stop-color="#f0bd58"/>
-    </linearGradient>
   </defs>
-  <path fill="#2b1a14" opacity=".22" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
-  <g clip-path="url(#stomach-cavity)">
-    <rect x="20" y="75" width="130" height="105" fill="url(#sample-fill)"/>
-    <path d="M20 75Q42 70 64 75t44 0t44 0" fill="none" stroke="#ffe3a1" stroke-width="3"/>
+
+  <!-- Empty cavity: intentionally no food/liquid fill in the source artwork. -->
+  <path d="M113 39C103 30 88 30 76 39C57 53 45 76 40 101C34 132 43 160 64 181C85 202 118 209 147 197C169 188 182 171 186 151C188 140 193 134 204 132C194 126 183 123 174 119C164 115 158 107 156 97C152 78 143 63 130 53C121 46 117 42 113 39Z" fill="#6a2f2a" fill-opacity="0.08" stroke="#5d2d23" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- Esophagus entering the cardia. -->
+  <path d="M108 4C108 17 109 28 113 39M123 4C122 18 120 30 113 39" fill="none" stroke="#5d2d23" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Pyloric canal and short duodenal outlet. -->
+  <path d="M184 139C194 136 204 139 214 145M185 151C196 150 205 153 214 159" fill="none" stroke="#5d2d23" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Subtle gastric folds indicate the inner wall without implying contents. -->
+  <g clip-path="url(#stomach-cavity)" fill="none" stroke="#8f5148" stroke-width="2.5" stroke-linecap="round" opacity="0.55">
+    <path d="M72 74C91 83 111 84 133 77"/>
+    <path d="M61 96C84 106 111 108 143 99"/>
+    <path d="M57 120C83 132 113 134 151 123"/>
+    <path d="M62 145C88 156 117 158 153 146"/>
+    <path d="M78 169C99 177 122 178 144 168"/>
   </g>
-  <path fill="none" stroke="#5d2d23" stroke-width="6" stroke-linejoin="round" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
-  <path fill="none" stroke="#5d2d23" stroke-width="6" stroke-linecap="round" d="M85 6c0 9 0 17-1 25M96 7c-1 10-2 18-5 27"/>
 </svg>
