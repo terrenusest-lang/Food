@@ -1,0 +1,19 @@
+{
+  "id": "food",
+  "title": "Food — Satiety Tracker",
+  "description": "A visual satiety and optional hydration tracker for D&D 5e on Foundry VTT 14, featuring an animated cross-section stomach widget and Simple Timekeeping compatibility.",
+  "version": "1.0.0",
+  "compatibility": {"minimum": "14", "verified": "14", "maximum": "14"},
+  "authors": [{"name": "terrenusest-lang"}],
+  "esmodules": ["scripts/food.js"],
+  "styles": ["styles/food.css"],
+  "languages": [{"lang":"en","name":"English","path":"lang/en.json"},{"lang":"ru","name":"Русский","path":"lang/ru.json"}],
+  "system": ["dnd5e"],
+  "relationships": {"recommends":[{"id":"simple-timekeeping","type":"module","compatibility":{"minimum":"1"}}]},
+  "url": "https://github.com/terrenusest-lang/Food",
+  "manifest": "https://raw.githubusercontent.com/terrenusest-lang/Food/main/module.json",
+  "download": "https://github.com/terrenusest-lang/Food/archive/refs/heads/main.zip",
+  "readme": "https://github.com/terrenusest-lang/Food/blob/main/README.md",
+  "bugs": "https://github.com/terrenusest-lang/Food/issues",
+  "license": "LICENSE"
+}
