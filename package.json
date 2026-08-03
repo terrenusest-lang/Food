@@ -1,0 +1,1 @@
+{"name":"foundry-food","private":true,"version":"1.0.0","type":"module","scripts":{"test":"node tests/validate.mjs","check":"node --check scripts/food.js && npm test"}}
