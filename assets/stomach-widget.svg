@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 180" role="img" aria-labelledby="title desc">
+  <title id="title">Food satiety stomach widget</title>
+  <desc id="desc">Editable source artwork for the animated stomach cross-section used by the Food module.</desc>
+  <defs>
+    <clipPath id="stomach-cavity">
+      <path d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+    </clipPath>
+    <linearGradient id="sample-fill" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#d48924"/>
+      <stop offset="1" stop-color="#f0bd58"/>
+    </linearGradient>
+  </defs>
+  <path fill="#2b1a14" opacity=".22" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+  <g clip-path="url(#stomach-cavity)">
+    <rect x="20" y="75" width="130" height="105" fill="url(#sample-fill)"/>
+    <path d="M20 75Q42 70 64 75t44 0t44 0" fill="none" stroke="#ffe3a1" stroke-width="3"/>
+  </g>
+  <path fill="none" stroke="#5d2d23" stroke-width="6" stroke-linejoin="round" d="M91 24c-2 25 3 38 19 47 29 17 36 47 23 72-14 28-52 27-74 12-25-17-34-48-21-74 8-16 23-25 34-35 8-8 11-16 12-25z"/>
+  <path fill="none" stroke="#5d2d23" stroke-width="6" stroke-linecap="round" d="M85 6c0 9 0 17-1 25M96 7c-1 10-2 18-5 27"/>
+</svg>
