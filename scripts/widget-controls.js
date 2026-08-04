@@ -48,6 +48,18 @@ function dialogForm(button, dialog) {
     ?? null;
 }
 
+async function consumeItemPortion(item) {
+  const rawQuantity = foundry.utils.getProperty(item, "system.quantity");
+  const quantity = Number(rawQuantity ?? 1);
+
+  if (!Number.isFinite(quantity) || quantity <= 1) {
+    await item.delete();
+    return;
+  }
+
+  await item.update({ "system.quantity": quantity - 1 });
+}
+
 async function consume(actor, type) {
   const isFood = type === "food";
   const flag = isFood ? "foodValue" : "waterValue";
@@ -85,15 +97,17 @@ async function consume(actor, type) {
 
           if (item) {
             amount += Number(item.getFlag(MODULE_ID, flag) || 0);
-            const quantity = Number(foundry.utils.getProperty(item, "system.quantity") ?? 1);
-            if (quantity > 0) await item.update({ "system.quantity": Math.max(0, quantity - 1) });
           }
 
           if (amount <= 0) return;
+
           const api = getApi();
           if (!api) throw new Error("Food API is not ready");
+
           if (isFood) await api.changeSatiety(actor, amount, { notify: false });
           else await api.setHydration(actor, api.getHydration(actor) + amount, { notify: false });
+
+          if (item) await consumeItemPortion(item);
         }
       },
       { action: "cancel", label: game.i18n.localize("Cancel") }
