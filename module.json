@@ -2,7 +2,7 @@
   "id": "food",
   "title": "Food — Satiety Tracker",
   "description": "A visual satiety and optional hydration tracker for D&D 5e on Foundry VTT 14, featuring an animated anatomical stomach widget and Simple Timekeeping compatibility.",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "compatibility": {"minimum": "14", "verified": "14", "maximum": "14"},
   "authors": [{"name": "terrenusest-lang"}],
   "esmodules": ["scripts/food.js", "scripts/stomach-widget.js", "scripts/widget-controls.js", "scripts/item-nutrition.js"],
