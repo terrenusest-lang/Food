@@ -13,26 +13,35 @@ function hydrationEnabled() {
   return game.settings.get(MODULE_ID, "hydrationEnabled");
 }
 
+function nutritionRow(label, flag, value) {
+  return `<div class="food-nutrition-row">
+    <label for="food-${flag}">${label}</label>
+    <div class="food-nutrition-control">
+      <input
+        id="food-${flag}"
+        class="food-nutrition-input"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="3"
+        autocomplete="off"
+        spellcheck="false"
+        data-food-item-flag="${flag}"
+        value="${value}"
+        aria-label="${label}">
+      <span class="food-nutrition-unit" aria-hidden="true">%</span>
+    </div>
+  </div>`;
+}
+
 function nutritionMarkup(item) {
   const foodValue = Number(item.getFlag(MODULE_ID, "foodValue") ?? 0);
   const waterValue = Number(item.getFlag(MODULE_ID, "waterValue") ?? 0);
 
   return `<fieldset class="food-item-config food-item-config-v2">
-    <legend><i class="fa-solid fa-bowl-food"></i> ${game.i18n.localize("FOOD.ItemConfig.Title")}</legend>
-    <div class="form-group">
-      <label>${game.i18n.localize("FOOD.ItemConfig.FoodValue")}</label>
-      <div class="form-fields">
-        <input type="number" data-food-item-flag="foodValue" min="0" max="100" step="1" value="${foodValue}">
-        <span class="units">%</span>
-      </div>
-    </div>
-    ${hydrationEnabled() ? `<div class="form-group">
-      <label>${game.i18n.localize("FOOD.ItemConfig.WaterValue")}</label>
-      <div class="form-fields">
-        <input type="number" data-food-item-flag="waterValue" min="0" max="100" step="1" value="${waterValue}">
-        <span class="units">%</span>
-      </div>
-    </div>` : ""}
+    <legend><i class="fa-solid fa-bowl-food"></i><span>${game.i18n.localize("FOOD.ItemConfig.Title")}</span></legend>
+    ${nutritionRow(game.i18n.localize("FOOD.ItemConfig.FoodValue"), "foodValue", foodValue)}
+    ${hydrationEnabled() ? nutritionRow(game.i18n.localize("FOOD.ItemConfig.WaterValue"), "waterValue", waterValue) : ""}
   </fieldset>`;
 }
 
@@ -49,23 +58,51 @@ function findInsertionTarget(element) {
   return { parent: form, after: null };
 }
 
+function normalizeValue(raw) {
+  const digits = String(raw ?? "").replace(/[^0-9]/g, "");
+  if (!digits) return 0;
+  return Math.min(100, Math.max(0, Number(digits)));
+}
+
+async function saveInput(item, input) {
+  const key = input.dataset.foodItemFlag;
+  const value = normalizeValue(input.value);
+  input.value = String(value);
+
+  try {
+    await item.setFlag(MODULE_ID, key, value);
+    input.dataset.savedValue = String(value);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Failed to save Item nutrition`, error);
+    ui.notifications.error(`Food: ${error.message ?? error}`);
+  }
+}
+
 function bindInputs(item, block) {
-  block.addEventListener("change", async event => {
-    const input = event.target.closest?.("[data-food-item-flag]");
-    if (!input) return;
+  for (const input of block.querySelectorAll("[data-food-item-flag]")) {
+    input.dataset.savedValue = input.value;
 
-    const key = input.dataset.foodItemFlag;
-    const value = Math.min(100, Math.max(0, Number(input.value) || 0));
-    input.value = String(value);
-
-    try {
-      await item.setFlag(MODULE_ID, key, value);
-      ui.notifications.info(`${game.i18n.localize("FOOD.ItemConfig.Title")}: ${value}%`);
-    } catch (error) {
-      console.error(`${MODULE_ID} | Failed to save Item nutrition`, error);
-      ui.notifications.error(`Food: ${error.message ?? error}`);
+    for (const eventName of ["pointerdown", "mousedown", "click", "dblclick", "keydown", "keyup"]) {
+      input.addEventListener(eventName, event => event.stopPropagation());
     }
-  });
+
+    input.addEventListener("focus", () => input.select());
+
+    input.addEventListener("input", () => {
+      const cleaned = input.value.replace(/[^0-9]/g, "").slice(0, 3);
+      if (input.value !== cleaned) input.value = cleaned;
+    });
+
+    input.addEventListener("keydown", async event => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      await saveInput(item, input);
+      input.blur();
+    });
+
+    input.addEventListener("blur", () => saveInput(item, input));
+    input.addEventListener("change", () => saveInput(item, input));
+  }
 }
 
 function injectNutrition(application, element) {
