@@ -1,12 +1,23 @@
 # Changelog
 
+## 1.0.3 — 2026-08-04
+
+- Fixed Eat, Drink, and Adjust buttons on Foundry VTT 14 / dnd5e sheets.
+- Replaced per-element click handlers with capture-phase delegated controls that survive sheet DOM replacement.
+- Added visible error notifications when a widget action fails.
+- Fixed DialogV2 form lookup for Foundry VTT 14 callbacks.
+- Added immediate percentage, state, hydration, and SVG refresh after Actor flag changes.
+- Added fallback elapsed-time calculation when a time provider omits the `delta` argument.
+- Added a hidden world-time checkpoint to prevent missed or duplicated decay.
+- Updated automated validation for interaction and live-refresh markers.
+
 ## 1.0.2 — 2026-08-03
 
-- Removed the sample food fill from `assets/stomach-widget.svg`; the source artwork is now empty by default.
-- Redrew the stomach with a more anatomically plausible J-shaped silhouette.
-- Added visible esophageal entry, fundus/body curvature, antral narrowing, pyloric canal, and a short duodenal outlet.
-- Added subtle gastric folds without implying that the stomach contains food.
-- Updated the runtime template, fill geometry, and CSS for the new 220×220 viewBox.
+- Removed demonstration contents from the standalone SVG; it now opens empty by design.
+- Reworked the stomach into a more anatomically representative J-shaped form.
+- Added cardia, fundus, body, antrum, pylorus, and a short duodenal outlet.
+- Added subtle internal rugae that remain separate from the dynamic food layer.
+- Recalibrated runtime filling for the new 220 × 220 anatomical cavity.
 
 ## 1.0.1 — 2026-08-03
 
