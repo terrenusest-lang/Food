@@ -48,30 +48,57 @@ function dialogForm(button, dialog) {
     ?? null;
 }
 
-async function consumeItemPortion(item) {
-  const rawQuantity = foundry.utils.getProperty(item, "system.quantity");
-  const quantity = Number(rawQuantity ?? 1);
+function itemQuantity(item) {
+  const quantity = Number(foundry.utils.getProperty(item, "system.quantity") ?? 1);
+  return Number.isFinite(quantity) ? quantity : 0;
+}
 
-  if (!Number.isFinite(quantity) || quantity <= 1) {
+function availableConsumables(actor, flag) {
+  return actor.items.filter(item => {
+    if (item.type !== "consumable") return false;
+    if (!item.parent || item.parent !== actor) return false;
+    if (itemQuantity(item) <= 0) return false;
+    return Number(item.getFlag(MODULE_ID, flag)) > 0;
+  });
+}
+
+function consumableOptions(actor, flag) {
+  return availableConsumables(actor, flag).map(item => {
+    const value = Number(item.getFlag(MODULE_ID, flag) || 0);
+    const quantity = itemQuantity(item);
+    return `<option value="${item.id}">${foundry.utils.escapeHTML(item.name)} ×${quantity} (+${value}%)</option>`;
+  }).join("");
+}
+
+function refreshConsumableSelect(form, actor, flag) {
+  const select = form?.elements?.itemId;
+  if (!select) return;
+  const options = consumableOptions(actor, flag);
+  select.innerHTML = options;
+  select.disabled = !options;
+
+  const empty = form.querySelector("[data-food-empty]");
+  if (empty) empty.hidden = Boolean(options);
+}
+
+async function consumeItemPortion(item) {
+  const quantity = itemQuantity(item);
+  if (quantity <= 1) {
     await item.delete();
-    return;
+    return true;
   }
 
   await item.update({ "system.quantity": quantity - 1 });
+  return false;
 }
 
 async function consume(actor, type) {
   const isFood = type === "food";
   const flag = isFood ? "foodValue" : "waterValue";
-  const items = actor.items.filter(item => item.type === "consumable" && Number(item.getFlag(MODULE_ID, flag)) > 0);
-  const options = items.map(item => {
-    const value = Number(item.getFlag(MODULE_ID, flag) || 0);
-    return `<option value="${item.id}">${foundry.utils.escapeHTML(item.name)} (+${value}%)</option>`;
-  }).join("");
-
+  const initialOptions = consumableOptions(actor, flag);
   const content = `<form class="food-dialog">
-    <p>${game.i18n.localize(items.length ? "FOOD.Dialog.Choose" : "FOOD.Dialog.NoItems")}</p>
-    ${items.length ? `<select name="itemId">${options}</select>` : ""}
+    <p data-food-empty ${initialOptions ? "hidden" : ""}>${game.i18n.localize("FOOD.Dialog.NoItems")}</p>
+    <select name="itemId" ${initialOptions ? "" : "disabled"}>${initialOptions}</select>
     <hr>
     <label>${game.i18n.localize("FOOD.Dialog.Manual")}
       <input type="number" name="manual" min="0" max="100" step="1" value="0">
@@ -95,11 +122,11 @@ async function consume(actor, type) {
           const item = selectedId ? actor.items.get(selectedId) : null;
           let amount = Number(form.elements.manual?.value || 0);
 
-          if (item) {
+          if (item && itemQuantity(item) > 0) {
             amount += Number(item.getFlag(MODULE_ID, flag) || 0);
           }
 
-          if (amount <= 0) return;
+          if (amount <= 0) return false;
 
           const api = getApi();
           if (!api) throw new Error("Food API is not ready");
@@ -107,7 +134,14 @@ async function consume(actor, type) {
           if (isFood) await api.changeSatiety(actor, amount, { notify: false });
           else await api.setHydration(actor, api.getHydration(actor) + amount, { notify: false });
 
-          if (item) await consumeItemPortion(item);
+          if (item && itemQuantity(item) > 0) await consumeItemPortion(item);
+
+          await new Promise(resolve => setTimeout(resolve, 0));
+          refreshConsumableSelect(form, actor, flag);
+          form.elements.manual.value = "0";
+          actor.sheet?.render?.(false);
+
+          return false;
         }
       },
       { action: "cancel", label: game.i18n.localize("Cancel") }
@@ -156,7 +190,6 @@ async function runAction(button) {
   const actor = resolveActor(widget);
   if (!actor) {
     ui.notifications.error("Food: character document was not found for this sheet.");
-    console.error(`${MODULE_ID} | Could not resolve Actor for widget`, widget);
     return;
   }
 
@@ -181,7 +214,6 @@ async function runAction(button) {
 
 function enableWidget(widget) {
   if (!widget) return;
-  widget.dataset.foodControlsBound = "true";
   for (const button of widget.querySelectorAll("[data-food-action]")) {
     button.removeAttribute("disabled");
     button.style.pointerEvents = "auto";
