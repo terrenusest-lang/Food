@@ -1,4 +1,5 @@
 const MODULE_ID = "food";
+const openFoodDialogs = new Map();
 
 function setting(key) {
   return game.settings.get(MODULE_ID, key);
@@ -63,17 +64,19 @@ function consumableOptions(actor, flag) {
   }).join("");
 }
 
-function dialogElement(dialog) {
+function dialogRoot(dialog) {
   return getRoot(dialog?.element) ?? getRoot(dialog?._element) ?? null;
 }
 
 function dialogForm(dialog) {
-  return dialogElement(dialog)?.querySelector("form.food-dialog") ?? null;
+  return dialogRoot(dialog)?.querySelector("form.food-dialog") ?? null;
 }
 
-function refreshConsumableSelect(form, actor, flag) {
+function refreshConsumableSelect(entry) {
+  const { dialog, actor, flag } = entry;
+  const form = dialogForm(dialog);
   const select = form?.elements?.itemId;
-  if (!select) return 0;
+  if (!form || !select) return -1;
 
   const items = availableConsumables(actor, flag);
   const selectedId = select.value;
@@ -85,137 +88,124 @@ function refreshConsumableSelect(form, actor, flag) {
   const empty = form.querySelector("[data-food-empty]");
   if (empty) empty.hidden = items.length > 0;
 
-  const consumeButton = form.querySelector("[data-food-consume]");
-  if (consumeButton) consumeButton.disabled = items.length === 0;
+  const consumeButton = form.querySelector("[data-food-dialog-consume]");
+  if (consumeButton) consumeButton.disabled = items.length === 0 || entry.busy;
 
   return items.length;
 }
 
 async function consumeItemPortion(item) {
   const quantity = itemQuantity(item);
-  if (quantity <= 1) {
-    await item.delete();
-    return;
-  }
-
-  await item.update({ "system.quantity": quantity - 1 });
+  if (quantity <= 1) await item.delete();
+  else await item.update({ "system.quantity": quantity - 1 });
 }
 
 function belongsToActor(item, actor) {
   return item instanceof Item && item.parent === actor;
 }
 
+function removeDialogHooks(entry) {
+  if (!entry) return;
+  if (entry.updateHook != null) Hooks.off("updateItem", entry.updateHook);
+  if (entry.deleteHook != null) Hooks.off("deleteItem", entry.deleteHook);
+  if (entry.createHook != null) Hooks.off("createItem", entry.createHook);
+  openFoodDialogs.delete(entry.id);
+}
+
+async function refreshDialog(entry) {
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const remaining = refreshConsumableSelect(entry);
+  if (remaining === 0) await entry.dialog.close();
+}
+
+async function handleDialogConsume(button) {
+  const id = button.dataset.foodDialogConsume;
+  const entry = openFoodDialogs.get(id);
+  if (!entry || entry.busy) return;
+
+  const form = dialogForm(entry.dialog);
+  if (!form) {
+    ui.notifications.error("Food: consume dialog form was not found.");
+    return;
+  }
+
+  const selectedId = form.elements.itemId?.value;
+  const item = selectedId ? entry.actor.items.get(selectedId) : null;
+  let amount = Number(form.elements.manual?.value || 0);
+
+  if (item && itemQuantity(item) > 0) {
+    amount += Number(item.getFlag(MODULE_ID, entry.flag) || 0);
+  }
+
+  if (amount <= 0) return;
+
+  entry.busy = true;
+  button.disabled = true;
+
+  try {
+    const api = getApi();
+    if (!api) throw new Error("Food API is not ready");
+
+    if (entry.isFood) await api.changeSatiety(entry.actor, amount, { notify: false });
+    else await api.setHydration(entry.actor, api.getHydration(entry.actor) + amount, { notify: false });
+
+    if (item && itemQuantity(item) > 0) await consumeItemPortion(item);
+    if (form.elements.manual) form.elements.manual.value = "0";
+
+    await refreshDialog(entry);
+    entry.actor.sheet?.render?.(false);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Failed to consume Item`, error);
+    ui.notifications.error(`Food: ${error.message ?? error}`);
+  } finally {
+    entry.busy = false;
+    const liveButton = dialogForm(entry.dialog)?.querySelector("[data-food-dialog-consume]");
+    if (liveButton && availableConsumables(entry.actor, entry.flag).length > 0) liveButton.disabled = false;
+  }
+}
+
 async function consume(actor, type) {
   const isFood = type === "food";
   const flag = isFood ? "foodValue" : "waterValue";
-  const initialItems = availableConsumables(actor, flag);
-
-  if (initialItems.length === 0) {
+  if (availableConsumables(actor, flag).length === 0) {
     ui.notifications.warn(game.i18n.localize("FOOD.Dialog.NoItems"));
     return;
   }
 
-  const content = `<form class="food-dialog">
+  const id = foundry.utils.randomID();
+  const content = `<form class="food-dialog" data-food-dialog-id="${id}">
     <p data-food-empty hidden>${game.i18n.localize("FOOD.Dialog.NoItems")}</p>
     <select name="itemId">${consumableOptions(actor, flag)}</select>
     <hr>
     <label>${game.i18n.localize("FOOD.Dialog.Manual")}
       <input type="number" name="manual" min="0" max="100" step="1" value="0">
     </label>
-    <button type="button" data-food-consume>
+    <button type="button" data-food-dialog-consume="${id}">
       <i class="fa-solid fa-check"></i> ${game.i18n.localize("FOOD.Actions.Consume")}
     </button>
   </form>`;
 
-  let updateHook;
-  let deleteHook;
-  let createHook;
-  let busy = false;
-
-  const removeHooks = () => {
-    if (updateHook != null) Hooks.off("updateItem", updateHook);
-    if (deleteHook != null) Hooks.off("deleteItem", deleteHook);
-    if (createHook != null) Hooks.off("createItem", createHook);
-  };
-
-  await foundry.applications.api.DialogV2.wait({
+  const dialog = new foundry.applications.api.DialogV2({
     window: { title: game.i18n.localize(isFood ? "FOOD.Actions.Eat" : "FOOD.Actions.Drink") },
     content,
-    buttons: [
-      { action: "cancel", label: game.i18n.localize("Cancel") }
-    ],
-    rejectClose: false,
-    render: (_event, dialog) => {
-      const form = dialogForm(dialog);
-      if (!form || form.dataset.foodBound === "true") return;
-      form.dataset.foodBound = "true";
-
-      const refresh = async () => {
-        await new Promise(resolve => setTimeout(resolve, 0));
-        const currentForm = dialogForm(dialog);
-        if (!currentForm) return;
-        const remaining = refreshConsumableSelect(currentForm, actor, flag);
-        if (remaining === 0) await dialog.close();
-      };
-
-      updateHook = Hooks.on("updateItem", item => {
-        if (belongsToActor(item, actor)) refresh();
-      });
-      deleteHook = Hooks.on("deleteItem", item => {
-        if (belongsToActor(item, actor)) refresh();
-      });
-      createHook = Hooks.on("createItem", item => {
-        if (belongsToActor(item, actor)) refresh();
-      });
-
-      form.querySelector("[data-food-consume]")?.addEventListener("click", async event => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (busy) return;
-
-        const currentForm = dialogForm(dialog);
-        if (!currentForm) return;
-
-        const selectedId = currentForm.elements.itemId?.value;
-        const item = selectedId ? actor.items.get(selectedId) : null;
-        const manual = Number(currentForm.elements.manual?.value || 0);
-        let amount = manual;
-
-        if (item && itemQuantity(item) > 0) amount += Number(item.getFlag(MODULE_ID, flag) || 0);
-        if (amount <= 0) return;
-
-        busy = true;
-        const consumeButton = currentForm.querySelector("[data-food-consume]");
-        if (consumeButton) consumeButton.disabled = true;
-
-        try {
-          const api = getApi();
-          if (!api) throw new Error("Food API is not ready");
-
-          if (isFood) await api.changeSatiety(actor, amount, { notify: false });
-          else await api.setHydration(actor, api.getHydration(actor) + amount, { notify: false });
-
-          if (item && itemQuantity(item) > 0) await consumeItemPortion(item);
-          currentForm.elements.manual.value = "0";
-
-          const remaining = refreshConsumableSelect(currentForm, actor, flag);
-          actor.sheet?.render?.(false);
-          if (remaining === 0) await dialog.close();
-        } catch (error) {
-          console.error(`${MODULE_ID} | Failed to consume Item`, error);
-          ui.notifications.error(`Food: ${error.message ?? error}`);
-        } finally {
-          busy = false;
-          const liveForm = dialogForm(dialog);
-          const liveButton = liveForm?.querySelector("[data-food-consume]");
-          if (liveButton && availableConsumables(actor, flag).length > 0) liveButton.disabled = false;
-        }
-      });
-    },
-    close: removeHooks
+    buttons: [{ action: "cancel", label: game.i18n.localize("Cancel") }],
+    close: () => removeDialogHooks(openFoodDialogs.get(id))
   });
 
-  removeHooks();
+  const entry = { id, dialog, actor, flag, isFood, busy: false, updateHook: null, deleteHook: null, createHook: null };
+  openFoodDialogs.set(id, entry);
+
+  entry.updateHook = Hooks.on("updateItem", item => {
+    if (belongsToActor(item, actor)) refreshDialog(entry);
+  });
+  entry.deleteHook = Hooks.on("deleteItem", item => {
+    if (belongsToActor(item, actor)) refreshDialog(entry);
+  });
+  entry.createHook = Hooks.on("createItem", item => {
+    if (belongsToActor(item, actor)) refreshDialog(entry);
+  });
+
+  await dialog.render({ force: true });
 }
 
 async function adjust(actor) {
@@ -295,6 +285,14 @@ function enableAllWidgets(root = document) {
 
 function installGlobalControls() {
   document.addEventListener("click", async event => {
+    const consumeButton = event.target.closest?.("[data-food-dialog-consume]");
+    if (consumeButton) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      await handleDialogConsume(consumeButton);
+      return;
+    }
+
     const button = event.target.closest?.(".food-widget [data-food-action]");
     if (!button) return;
     event.preventDefault();
