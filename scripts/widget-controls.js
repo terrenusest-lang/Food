@@ -22,7 +22,6 @@ function dialogForm(button, dialog) {
 async function consume(actor, type) {
   const isFood = type === "food";
   const flag = isFood ? "foodValue" : "waterValue";
-  const resource = isFood ? "satiety" : "hydration";
   const items = actor.items.filter(item => item.type === "consumable" && Number(item.getFlag(MODULE_ID, flag)) > 0);
   const options = items.map(item => {
     const value = Number(item.getFlag(MODULE_ID, flag) || 0);
@@ -64,8 +63,8 @@ async function consume(actor, type) {
           if (amount <= 0) return;
           const api = getApi();
           if (!api) throw new Error("Food API is not ready");
-          if (resource === "satiety") await api.changeSatiety(actor, amount, { notify: false });
-          else await api.changeHydration(actor, amount, { notify: false });
+          if (isFood) await api.changeSatiety(actor, amount, { notify: false });
+          else await api.setHydration(actor, api.getHydration(actor) + amount, { notify: false });
         }
       },
       { action: "cancel", label: game.i18n.localize("Cancel") }
@@ -111,7 +110,7 @@ function bindWidget(actor, widget) {
   if (!actor || !widget || widget.dataset.foodControlsBound === "true") return;
   widget.dataset.foodControlsBound = "true";
 
-  widget.addEventListener("pointerup", async event => {
+  const handleAction = async event => {
     const button = event.target.closest?.("[data-food-action]");
     if (!button || !widget.contains(button)) return;
 
@@ -135,6 +134,11 @@ function bindWidget(actor, widget) {
     } finally {
       button.disabled = false;
     }
+  };
+
+  widget.addEventListener("click", handleAction, { capture: true });
+  widget.addEventListener("pointerup", event => {
+    if (event.pointerType === "touch") handleAction(event);
   }, { capture: true });
 }
 
