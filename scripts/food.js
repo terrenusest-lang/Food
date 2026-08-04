@@ -3,9 +3,7 @@ const F = {
   SATIETY: "satiety",
   HYDRATION: "hydration",
   NOTIFIED: "notifiedThresholds",
-  LAST_TIME: "lastWorldTime",
-  FOOD_VALUE: "foodValue",
-  WATER_VALUE: "waterValue"
+  LAST_TIME: "lastWorldTime"
 };
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0));
@@ -28,6 +26,13 @@ function registerSettings() {
   register("showExactPercent", { name: "FOOD.Settings.ShowPercent.Name", hint: "FOOD.Settings.ShowPercent.Hint", type: Boolean, default: false });
   register("allowPlayerAdjust", { name: "FOOD.Settings.PlayerAdjust.Name", hint: "FOOD.Settings.PlayerAdjust.Hint", type: Boolean, default: true });
   register("applyExhaustion", { name: "FOOD.Settings.Exhaustion.Name", hint: "FOOD.Settings.Exhaustion.Hint", type: Boolean, default: false });
+
+  game.settings.register(MODULE_ID, "lastProcessedWorldTime", {
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 0
+  });
 }
 
 function thresholds() {
@@ -61,10 +66,6 @@ function stateFor(value) {
   return "full";
 }
 
-function canControl(actor) {
-  return game.user.isGM || (setting("allowPlayerAdjust") && actor.isOwner);
-}
-
 function actorWidgets(actor) {
   return document.querySelectorAll(`.food-widget[data-actor-id="${CSS.escape(actor.id)}"]`);
 }
@@ -84,8 +85,8 @@ function updateWidgetText(actor) {
       percent.hidden = !exact;
     }
 
-    const hydrationProgress = widget.querySelector(".food-hydration progress");
-    if (hydrationProgress) hydrationProgress.value = hydration;
+    const progress = widget.querySelector(".food-hydration progress");
+    if (progress) progress.value = hydration;
 
     const hydrationPercent = widget.querySelector(".food-hydration-percent");
     if (hydrationPercent) {
@@ -117,15 +118,16 @@ async function processThresholds(actor, oldValue, newValue) {
   for (const threshold of thresholds()) if (newValue > threshold) delete notified[threshold];
 
   const crossed = thresholds().filter(threshold => oldValue > threshold && newValue <= threshold && !notified[threshold]);
-  if (crossed.length) {
-    const threshold = crossed[crossed.length - 1];
-    notified[threshold] = true;
+  if (!crossed.length) {
     await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
-    await sendHungerMessage(actor, threshold, newValue);
-    if (threshold === 0 && setting("applyExhaustion")) await addExhaustion(actor);
-  } else {
-    await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
+    return;
   }
+
+  const threshold = crossed[crossed.length - 1];
+  notified[threshold] = true;
+  await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
+  await sendHungerMessage(actor, threshold, newValue);
+  if (threshold === 0 && setting("applyExhaustion")) await addExhaustion(actor);
 }
 
 async function sendHungerMessage(actor, threshold, value) {
@@ -155,9 +157,8 @@ function widgetHtml(actor) {
   const satiety = getValue(actor, F.SATIETY);
   const hydration = getValue(actor, F.HYDRATION);
   const exact = setting("showExactPercent") || game.user.isGM;
-  const controlsDisabled = canControl(actor) ? "" : "disabled";
 
-  return `<section class="food-widget" data-actor-id="${actor.id}">
+  return `<section class="food-widget food-widget-biography" data-actor-id="${actor.id}">
     <header><i class="fa-solid fa-bowl-food"></i>${game.i18n.localize("FOOD.Title")}</header>
     <div class="food-resource">
       <div class="food-visual">
@@ -166,15 +167,15 @@ function widgetHtml(actor) {
         <b class="food-percent" ${exact ? "" : "hidden"}>${Math.round(satiety)}%</b>
       </div>
       <div class="food-actions">
-        <button type="button" data-food-action="eat" ${controlsDisabled}><i class="fa-solid fa-utensils"></i>${game.i18n.localize("FOOD.Actions.Eat")}</button>
-        <button type="button" data-food-action="adjust" ${controlsDisabled}><i class="fa-solid fa-sliders"></i>${game.i18n.localize("FOOD.Actions.Adjust")}</button>
+        <button type="button" data-food-action="eat"><i class="fa-solid fa-utensils"></i>${game.i18n.localize("FOOD.Actions.Eat")}</button>
+        <button type="button" data-food-action="adjust"><i class="fa-solid fa-sliders"></i>${game.i18n.localize("FOOD.Actions.Adjust")}</button>
       </div>
     </div>
     ${setting("hydrationEnabled") ? `<div class="food-hydration">
       <i class="fa-solid fa-droplet"></i><span>${game.i18n.localize("FOOD.Hydration")}</span>
       <progress max="100" value="${hydration}"></progress>
       <b class="food-hydration-percent" ${exact ? "" : "hidden"}>${Math.round(hydration)}%</b>
-      <button type="button" data-food-action="drink" ${controlsDisabled}><i class="fa-solid fa-glass-water"></i></button>
+      <button type="button" data-food-action="drink"><i class="fa-solid fa-glass-water"></i></button>
     </div>` : ""}
   </section>`;
 }
@@ -185,130 +186,49 @@ function getRoot(html) {
   return null;
 }
 
+function biographyTarget(root) {
+  const selectors = [
+    '.tab[data-tab="biography"]',
+    '[data-tab="biography"].tab',
+    '.tab.biography',
+    '[data-tab="background"]',
+    '.tab[data-tab="description"]'
+  ];
+  for (const selector of selectors) {
+    const target = root.querySelector(selector);
+    if (target) return target;
+  }
+  return null;
+}
+
+function mountWidget(actor, root) {
+  if (!root || root.querySelector(`.food-widget[data-actor-id="${CSS.escape(actor.id)}"]`)) return true;
+  const target = biographyTarget(root);
+  if (!target) return false;
+
+  target.insertAdjacentHTML("afterbegin", widgetHtml(actor));
+  const widget = target.querySelector(`.food-widget[data-actor-id="${CSS.escape(actor.id)}"]`);
+  Hooks.callAll("foodWidgetInserted", actor, widget);
+  return true;
+}
+
 function injectWidget(app, html) {
   if (!setting("enabled")) return;
-  const actor = app.actor ?? app.document;
+  const actor = app.actor ?? app.document ?? app.object;
   if (!(actor instanceof Actor) || actor.type !== "character") return;
 
-  const root = getRoot(html);
-  if (!root || root.querySelector(".food-widget")) return;
-  const target = root.querySelector(".sheet-body, .window-content, form") ?? root;
-  target.insertAdjacentHTML("afterbegin", widgetHtml(actor));
-  Hooks.callAll("foodWidgetInserted", actor, target.querySelector(`.food-widget[data-actor-id="${CSS.escape(actor.id)}"]`));
-}
+  const root = getRoot(html) ?? getRoot(app.element) ?? getRoot(app._element);
+  if (!root || mountWidget(actor, root)) return;
 
-function dialogForm(button, dialog) {
-  return button?.form
-    ?? dialog?.element?.querySelector?.("form")
-    ?? dialog?.window?.content?.querySelector?.("form")
-    ?? null;
-}
-
-async function openConsumeDialog(actor, type) {
-  const flag = type === "food" ? F.FOOD_VALUE : F.WATER_VALUE;
-  const items = actor.items.filter(item => item.type === "consumable" && Number(item.getFlag(MODULE_ID, flag)) > 0);
-  const options = items.map(item => `<option value="${item.id}">${foundry.utils.escapeHTML(item.name)} (+${Number(item.getFlag(MODULE_ID, flag))}%)</option>`).join("");
-  const content = `<form class="food-dialog">
-    <p>${game.i18n.localize(items.length ? "FOOD.Dialog.Choose" : "FOOD.Dialog.NoItems")}</p>
-    ${items.length ? `<select name="itemId">${options}</select>` : ""}
-    <hr>
-    <label>${game.i18n.localize("FOOD.Dialog.Manual")}<input type="number" name="manual" min="0" max="100" step="1" value="0"></label>
-  </form>`;
-
-  await foundry.applications.api.DialogV2.wait({
-    window: { title: game.i18n.localize(type === "food" ? "FOOD.Actions.Eat" : "FOOD.Actions.Drink") },
-    content,
-    buttons: [
-      {
-        action: "consume",
-        label: game.i18n.localize("FOOD.Actions.Consume"),
-        icon: "fa-solid fa-check",
-        default: true,
-        callback: async (_event, button, dialog) => {
-          const form = dialogForm(button, dialog);
-          if (!form) throw new Error("Food dialog form was not found");
-
-          const item = actor.items.get(form.elements.itemId?.value);
-          let amount = Number(form.elements.manual?.value || 0);
-          if (item) {
-            amount += Number(item.getFlag(MODULE_ID, flag) || 0);
-            const quantity = Number(foundry.utils.getProperty(item, "system.quantity") ?? 1);
-            if (quantity > 0) await item.update({ "system.quantity": Math.max(0, quantity - 1) });
-          }
-          if (amount > 0) await changeResource(actor, type === "food" ? F.SATIETY : F.HYDRATION, amount, { notify: false });
-        }
-      },
-      { action: "cancel", label: game.i18n.localize("Cancel") }
-    ]
-  });
-}
-
-async function openAdjustDialog(actor) {
-  const content = `<form class="food-dialog">
-    <label>${game.i18n.localize("FOOD.Satiety")}<input name="satiety" type="number" min="0" max="100" value="${getValue(actor, F.SATIETY)}"></label>
-    ${setting("hydrationEnabled") ? `<label>${game.i18n.localize("FOOD.Hydration")}<input name="hydration" type="number" min="0" max="100" value="${getValue(actor, F.HYDRATION)}"></label>` : ""}
-  </form>`;
-
-  await foundry.applications.api.DialogV2.wait({
-    window: { title: game.i18n.localize("FOOD.Actions.Adjust") },
-    content,
-    buttons: [
-      {
-        action: "save",
-        label: game.i18n.localize("Save"),
-        default: true,
-        callback: async (_event, button, dialog) => {
-          const form = dialogForm(button, dialog);
-          if (!form) throw new Error("Food adjustment form was not found");
-          await setResource(actor, F.SATIETY, form.elements.satiety.value);
-          if (setting("hydrationEnabled")) await setResource(actor, F.HYDRATION, form.elements.hydration.value, { notify: false });
-        }
-      },
-      { action: "cancel", label: game.i18n.localize("Cancel") }
-    ]
-  });
-}
-
-function installDelegatedControls() {
-  document.addEventListener("click", async event => {
-    const button = event.target.closest?.(".food-widget [data-food-action]");
-    if (!button) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const widget = button.closest(".food-widget");
-    const actor = game.actors.get(widget?.dataset.actorId);
-    if (!actor || !canControl(actor)) return;
-
-    button.disabled = true;
-    try {
-      const action = button.dataset.foodAction;
-      if (action === "eat") await openConsumeDialog(actor, "food");
-      else if (action === "drink") await openConsumeDialog(actor, "water");
-      else if (action === "adjust") await openAdjustDialog(actor);
-    } catch (error) {
-      console.error(`${MODULE_ID} | Widget action failed`, error);
-      ui.notifications.error(`Food: ${error.message ?? error}`);
-    } finally {
-      button.disabled = false;
+  const observer = new MutationObserver(() => {
+    if (!root.isConnected) {
+      observer.disconnect();
+      return;
     }
-  }, true);
-}
-
-function addItemConfig(app, html) {
-  const item = app.item ?? app.document;
-  if (!(item instanceof Item) || item.type !== "consumable") return;
-
-  const root = getRoot(html);
-  const form = root?.querySelector("form") ?? root;
-  if (!form || form.querySelector(".food-item-config")) return;
-
-  form.insertAdjacentHTML("beforeend", `<fieldset class="food-item-config">
-    <legend>${game.i18n.localize("FOOD.ItemConfig.Title")}</legend>
-    <label>${game.i18n.localize("FOOD.ItemConfig.FoodValue")}<input type="number" name="flags.${MODULE_ID}.${F.FOOD_VALUE}" min="0" max="100" step="1" value="${Number(item.getFlag(MODULE_ID, F.FOOD_VALUE) || 0)}"></label>
-    ${setting("hydrationEnabled") ? `<label>${game.i18n.localize("FOOD.ItemConfig.WaterValue")}<input type="number" name="flags.${MODULE_ID}.${F.WATER_VALUE}" min="0" max="100" step="1" value="${Number(item.getFlag(MODULE_ID, F.WATER_VALUE) || 0)}"></label>` : ""}
-  </fieldset>`);
+    if (mountWidget(actor, root)) observer.disconnect();
+  });
+  observer.observe(root, { childList: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 30000);
 }
 
 async function processElapsedTime(worldTime, delta) {
@@ -336,17 +256,10 @@ async function processElapsedTime(worldTime, delta) {
 
 Hooks.once("init", () => {
   registerSettings();
-  game.settings.register(MODULE_ID, "lastProcessedWorldTime", {
-    scope: "world",
-    config: false,
-    type: Number,
-    default: 0
-  });
   console.log(`${MODULE_ID} | Initialized`);
 });
 
 Hooks.once("ready", () => {
-  installDelegatedControls();
   game.modules.get(MODULE_ID).api = {
     getSatiety: actor => getValue(actor, F.SATIETY),
     setSatiety: (actor, value, options) => setResource(actor, F.SATIETY, value, options),
@@ -358,13 +271,14 @@ Hooks.once("ready", () => {
   if (game.user.isGM && !game.settings.get(MODULE_ID, "lastProcessedWorldTime")) {
     game.settings.set(MODULE_ID, "lastProcessedWorldTime", Number(game.time.worldTime) || 0);
   }
-  if (game.modules.get("simple-timekeeping")?.active) ui.notifications.info(game.i18n.localize("FOOD.Notifications.TimekeepingDetected"));
+  if (game.modules.get("simple-timekeeping")?.active) {
+    ui.notifications.info(game.i18n.localize("FOOD.Notifications.TimekeepingDetected"));
+  }
 });
 
 Hooks.on("renderActorSheet", injectWidget);
 Hooks.on("renderActorSheetV2", injectWidget);
-Hooks.on("renderItemSheet", addItemConfig);
-Hooks.on("renderItemSheetV2", addItemConfig);
+Hooks.on("renderApplicationV2", injectWidget);
 Hooks.on("updateWorldTime", processElapsedTime);
 Hooks.on("updateActor", actor => {
   if (actor.type !== "character") return;
