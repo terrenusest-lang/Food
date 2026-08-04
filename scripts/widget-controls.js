@@ -64,23 +64,26 @@ function consumableOptions(actor, flag) {
   }).join("");
 }
 
-function dialogRoot(dialog) {
-  return getRoot(dialog?.element) ?? getRoot(dialog?._element) ?? null;
+function findDialogForm(id) {
+  if (!id) return null;
+  const escaped = globalThis.CSS?.escape ? CSS.escape(id) : id.replace(/["\\]/g, "\\$&");
+  return document.querySelector(`form.food-dialog[data-food-dialog-id="${escaped}"]`);
 }
 
-function dialogForm(dialog) {
-  return dialogRoot(dialog)?.querySelector("form.food-dialog") ?? null;
-}
+function refreshConsumableSelect(entry, suppliedForm = null) {
+  const form = suppliedForm ?? entry.form ?? findDialogForm(entry.id);
+  if (!form?.isConnected) {
+    entry.form = null;
+    return -1;
+  }
+  entry.form = form;
 
-function refreshConsumableSelect(entry) {
-  const { dialog, actor, flag } = entry;
-  const form = dialogForm(dialog);
-  const select = form?.elements?.itemId;
-  if (!form || !select) return -1;
+  const select = form.elements?.itemId;
+  if (!select) return -1;
 
-  const items = availableConsumables(actor, flag);
+  const items = availableConsumables(entry.actor, entry.flag);
   const selectedId = select.value;
-  select.innerHTML = consumableOptions(actor, flag);
+  select.innerHTML = consumableOptions(entry.actor, entry.flag);
   select.disabled = items.length === 0;
 
   if (selectedId && items.some(item => item.id === selectedId)) select.value = selectedId;
@@ -119,15 +122,12 @@ async function refreshDialog(entry) {
 }
 
 async function handleDialogConsume(button) {
-  const id = button.dataset.foodDialogConsume;
+  const form = button.closest("form.food-dialog");
+  const id = form?.dataset.foodDialogId ?? button.dataset.foodDialogConsume;
   const entry = openFoodDialogs.get(id);
-  if (!entry || entry.busy) return;
+  if (!entry || entry.busy || !form) return;
 
-  const form = dialogForm(entry.dialog);
-  if (!form) {
-    ui.notifications.error("Food: consume dialog form was not found.");
-    return;
-  }
+  entry.form = form;
 
   const selectedId = form.elements.itemId?.value;
   const item = selectedId ? entry.actor.items.get(selectedId) : null;
@@ -152,14 +152,17 @@ async function handleDialogConsume(button) {
     if (item && itemQuantity(item) > 0) await consumeItemPortion(item);
     if (form.elements.manual) form.elements.manual.value = "0";
 
-    await refreshDialog(entry);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const remaining = refreshConsumableSelect(entry, form);
     entry.actor.sheet?.render?.(false);
+    if (remaining === 0) await entry.dialog.close();
   } catch (error) {
     console.error(`${MODULE_ID} | Failed to consume Item`, error);
     ui.notifications.error(`Food: ${error.message ?? error}`);
   } finally {
     entry.busy = false;
-    const liveButton = dialogForm(entry.dialog)?.querySelector("[data-food-dialog-consume]");
+    const liveForm = entry.form?.isConnected ? entry.form : findDialogForm(entry.id);
+    const liveButton = liveForm?.querySelector("[data-food-dialog-consume]");
     if (liveButton && availableConsumables(entry.actor, entry.flag).length > 0) liveButton.disabled = false;
   }
 }
@@ -192,7 +195,7 @@ async function consume(actor, type) {
     close: () => removeDialogHooks(openFoodDialogs.get(id))
   });
 
-  const entry = { id, dialog, actor, flag, isFood, busy: false, updateHook: null, deleteHook: null, createHook: null };
+  const entry = { id, dialog, actor, flag, isFood, form: null, busy: false, updateHook: null, deleteHook: null, createHook: null };
   openFoodDialogs.set(id, entry);
 
   entry.updateHook = Hooks.on("updateItem", item => {
@@ -206,6 +209,7 @@ async function consume(actor, type) {
   });
 
   await dialog.render({ force: true });
+  entry.form = findDialogForm(id);
 }
 
 async function adjust(actor) {
