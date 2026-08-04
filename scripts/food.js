@@ -96,13 +96,31 @@ function updateWidgetText(actor) {
   }
 }
 
+async function resetRecoveredThresholds(actor, newValue) {
+  const notified = foundry.utils.deepClone(actor.getFlag(MODULE_ID, F.NOTIFIED) ?? {});
+  let changed = false;
+
+  for (const threshold of thresholds()) {
+    if (newValue > threshold && notified[threshold]) {
+      delete notified[threshold];
+      changed = true;
+    }
+  }
+
+  if (changed) await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
+}
+
 async function setResource(actor, key, next, { notify = true } = {}) {
   const oldValue = getValue(actor, key);
   const newValue = clamp(next);
   if (oldValue === newValue) return newValue;
 
   await actor.setFlag(MODULE_ID, key, newValue);
-  if (key === F.SATIETY && notify) await processThresholds(actor, oldValue, newValue);
+
+  if (key === F.SATIETY) {
+    if (newValue > oldValue) await resetRecoveredThresholds(actor, newValue);
+    else if (notify) await processThresholds(actor, oldValue, newValue);
+  }
 
   updateWidgetText(actor);
   Hooks.callAll("foodResourceChanged", actor, key, oldValue, newValue);
@@ -115,19 +133,17 @@ async function changeResource(actor, key, delta, options) {
 
 async function processThresholds(actor, oldValue, newValue) {
   const notified = foundry.utils.deepClone(actor.getFlag(MODULE_ID, F.NOTIFIED) ?? {});
-  for (const threshold of thresholds()) if (newValue > threshold) delete notified[threshold];
-
   const crossed = thresholds().filter(threshold => oldValue > threshold && newValue <= threshold && !notified[threshold]);
-  if (!crossed.length) {
-    await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
-    return;
-  }
 
-  const threshold = crossed[crossed.length - 1];
-  notified[threshold] = true;
+  if (!crossed.length) return;
+
+  for (const threshold of crossed) notified[threshold] = true;
   await actor.setFlag(MODULE_ID, F.NOTIFIED, notified);
-  await sendHungerMessage(actor, threshold, newValue);
-  if (threshold === 0 && setting("applyExhaustion")) await addExhaustion(actor);
+
+  const lowestThreshold = crossed[crossed.length - 1];
+  await sendHungerMessage(actor, lowestThreshold, newValue);
+
+  if (crossed.includes(0) && setting("applyExhaustion")) await addExhaustion(actor);
 }
 
 async function sendHungerMessage(actor, threshold, value) {
@@ -149,8 +165,12 @@ async function sendHungerMessage(actor, threshold, value) {
 
 async function addExhaustion(actor) {
   const path = "system.attributes.exhaustion";
-  const current = foundry.utils.getProperty(actor, path);
-  if (typeof current === "number") await actor.update({ [path]: Math.min(6, current + 1) });
+  const current = Number(foundry.utils.getProperty(actor, path));
+  if (!Number.isFinite(current)) {
+    console.warn(`${MODULE_ID} | Exhaustion value is not numeric for ${actor.name}`, foundry.utils.getProperty(actor, path));
+    return;
+  }
+  await actor.update({ [path]: Math.min(6, current + 1) });
 }
 
 function widgetHtml(actor) {
