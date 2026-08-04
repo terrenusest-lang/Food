@@ -118,8 +118,14 @@ async function setResource(actor, key, next, { notify = true } = {}) {
   await actor.setFlag(MODULE_ID, key, newValue);
 
   if (key === F.SATIETY) {
-    if (newValue > oldValue) await resetRecoveredThresholds(actor, newValue);
-    else if (notify) await processThresholds(actor, oldValue, newValue);
+    if (newValue > oldValue) {
+      await resetRecoveredThresholds(actor, newValue);
+    } else {
+      if (oldValue > 0 && newValue <= 0 && setting("applyExhaustion")) {
+        await addExhaustion(actor);
+      }
+      if (notify) await processThresholds(actor, oldValue, newValue);
+    }
   }
 
   updateWidgetText(actor);
@@ -142,8 +148,6 @@ async function processThresholds(actor, oldValue, newValue) {
 
   const lowestThreshold = crossed[crossed.length - 1];
   await sendHungerMessage(actor, lowestThreshold, newValue);
-
-  if (crossed.includes(0) && setting("applyExhaustion")) await addExhaustion(actor);
 }
 
 async function sendHungerMessage(actor, threshold, value) {
@@ -165,12 +169,27 @@ async function sendHungerMessage(actor, threshold, value) {
 
 async function addExhaustion(actor) {
   const path = "system.attributes.exhaustion";
-  const current = Number(foundry.utils.getProperty(actor, path));
-  if (!Number.isFinite(current)) {
-    console.warn(`${MODULE_ID} | Exhaustion value is not numeric for ${actor.name}`, foundry.utils.getProperty(actor, path));
-    return;
+  const rawCurrent = actor.system?.attributes?.exhaustion;
+  const current = Number(rawCurrent ?? 0);
+  const next = Math.min(6, Math.max(0, current) + 1);
+
+  try {
+    await actor.update({ [path]: next });
+    const saved = Number(actor.system?.attributes?.exhaustion);
+    if (saved !== next) {
+      throw new Error(`dnd5e did not persist exhaustion level ${next}; current value is ${saved}`);
+    }
+    ui.notifications.info(`Food: ${actor.name} gains Exhaustion ${next}.`);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Failed to apply exhaustion to ${actor.name}`, {
+      error,
+      current: rawCurrent,
+      requested: next,
+      actor: actor.uuid
+    });
+    ui.notifications.error(`Food: failed to apply Exhaustion to ${actor.name}: ${error.message ?? error}`);
+    throw error;
   }
-  await actor.update({ [path]: Math.min(6, current + 1) });
 }
 
 function widgetHtml(actor) {
