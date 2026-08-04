@@ -5,11 +5,40 @@ function setting(key) {
 }
 
 function canControl(actor) {
-  return game.user.isGM || (setting("allowPlayerAdjust") && actor?.isOwner);
+  return Boolean(game.user.isGM || (setting("allowPlayerAdjust") && actor?.testUserPermission?.(game.user, "OWNER")));
 }
 
 function getApi() {
   return game.modules.get(MODULE_ID)?.api;
+}
+
+function getRoot(element) {
+  if (element instanceof HTMLElement) return element;
+  if (element?.[0] instanceof HTMLElement) return element[0];
+  return null;
+}
+
+function appElement(app) {
+  return getRoot(app?.element) ?? getRoot(app?._element) ?? null;
+}
+
+function resolveActor(widget) {
+  for (const app of Object.values(ui.windows ?? {})) {
+    const root = appElement(app);
+    if (!root?.contains(widget)) continue;
+    const actor = app.actor ?? app.document;
+    if (actor instanceof Actor) return actor;
+  }
+
+  const actorId = widget?.dataset.actorId;
+  const worldActor = actorId ? game.actors.get(actorId) : null;
+  if (worldActor) return worldActor;
+
+  for (const token of canvas?.tokens?.placeables ?? []) {
+    if (token.actor?.id === actorId) return token.actor;
+  }
+
+  return null;
 }
 
 function dialogForm(button, dialog) {
@@ -106,52 +135,72 @@ async function adjust(actor) {
   });
 }
 
-function bindWidget(actor, widget) {
-  if (!actor || !widget || widget.dataset.foodControlsBound === "true") return;
-  widget.dataset.foodControlsBound = "true";
+async function runAction(button) {
+  const widget = button.closest(".food-widget");
+  if (!widget) return;
 
-  const handleAction = async event => {
-    const button = event.target.closest?.("[data-food-action]");
-    if (!button || !widget.contains(button)) return;
+  const actor = resolveActor(widget);
+  if (!actor) {
+    ui.notifications.error("Food: character document was not found for this sheet.");
+    console.error(`${MODULE_ID} | Could not resolve Actor for widget`, widget);
+    return;
+  }
 
-    event.preventDefault();
-    event.stopPropagation();
+  if (!canControl(actor)) {
+    ui.notifications.warn("Food: you do not have permission to change this character.");
+    return;
+  }
 
-    if (!canControl(actor)) {
-      ui.notifications.warn("Food: you do not have permission to change this character.");
-      return;
-    }
-
+  button.disabled = true;
+  try {
     const action = button.dataset.foodAction;
-    button.disabled = true;
-    try {
-      if (action === "eat") await consume(actor, "food");
-      else if (action === "drink") await consume(actor, "water");
-      else if (action === "adjust") await adjust(actor);
-    } catch (error) {
-      console.error(`${MODULE_ID} | Widget control failed`, error);
-      ui.notifications.error(`Food: ${error.message ?? error}`);
-    } finally {
-      button.disabled = false;
-    }
-  };
-
-  widget.addEventListener("click", handleAction, { capture: true });
-  widget.addEventListener("pointerup", event => {
-    if (event.pointerType === "touch") handleAction(event);
-  }, { capture: true });
+    if (action === "eat") await consume(actor, "food");
+    else if (action === "drink") await consume(actor, "water");
+    else if (action === "adjust") await adjust(actor);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Widget control failed`, error);
+    ui.notifications.error(`Food: ${error.message ?? error}`);
+  } finally {
+    button.disabled = false;
+  }
 }
 
-Hooks.on("foodWidgetInserted", bindWidget);
-Hooks.on("renderActorSheet", (app, html) => {
-  const actor = app.actor ?? app.document;
-  const root = html instanceof HTMLElement ? html : html?.[0];
-  const widget = root?.querySelector?.(".food-widget");
-  if (actor && widget) bindWidget(actor, widget);
-});
-Hooks.on("renderActorSheetV2", (app, html) => {
-  const actor = app.actor ?? app.document;
-  const root = html instanceof HTMLElement ? html : html?.[0];
-  const widget = root?.querySelector?.(".food-widget");
-  if (actor && widget) bindWidget(actor, widget);
-});
+function enableWidget(widget) {
+  if (!widget) return;
+  widget.dataset.foodControlsBound = "true";
+  for (const button of widget.querySelectorAll("[data-food-action]")) {
+    button.removeAttribute("disabled");
+    button.style.pointerEvents = "auto";
+  }
+}
+
+function enableAllWidgets(root = document) {
+  for (const widget of root.querySelectorAll?.(".food-widget") ?? []) enableWidget(widget);
+}
+
+function installGlobalControls() {
+  document.addEventListener("click", async event => {
+    const button = event.target.closest?.(".food-widget [data-food-action]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    await runAction(button);
+  }, true);
+
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.matches?.(".food-widget")) enableWidget(node);
+        enableAllWidgets(node);
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  enableAllWidgets();
+}
+
+Hooks.once("ready", installGlobalControls);
+Hooks.on("foodWidgetInserted", (_actor, widget) => enableWidget(widget));
+Hooks.on("renderActorSheet", (_app, html) => enableAllWidgets(getRoot(html) ?? document));
+Hooks.on("renderActorSheetV2", (_app, html) => enableAllWidgets(getRoot(html) ?? document));
